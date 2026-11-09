@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#254f42">
+  <meta name="description" content="ระบบเช็กชื่อนักศึกษาวิชาทหาร จัดการทะเบียนและติดตามการฝึก ชั้นปีที่ 1–3">
+  <title>นศท. · ระบบเช็กชื่อและติดตามการฝึก</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="vendor/supabase.js"></script>
+  <script defer src="vendor/xlsx.full.min.js"></script>
+  <script defer src="config.js"></script>
+  <script defer src="core.js"></script>
+  <script defer src="api.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">ข้ามไปเนื้อหา</a>
+  <div id="app"><div class="loading">กำลังเตรียมระบบเช็กชื่อ นศท.…</div></div>
+  <dialog id="modal" aria-label="แบบฟอร์ม"><div id="modal-body"></div></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <noscript>กรุณาเปิดใช้งาน JavaScript เพื่อใช้ระบบเช็กชื่อ</noscript>
+</body>
+</html>

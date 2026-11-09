@@ -1,0 +1,38 @@
+name: Encrypted daily database backup
+on:
+  schedule:
+    - cron: '17 19 * * *' # 02:17 Asia/Bangkok
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: database-backup
+  cancel-in-progress: false
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Check required secrets
+        run: |
+          test -n "$SUPABASE_DB_URL" || { echo 'SUPABASE_DB_URL is missing'; exit 1; }
+          test -n "$BACKUP_PASSPHRASE" || { echo 'BACKUP_PASSPHRASE is missing'; exit 1; }
+      - name: Dump and encrypt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p backup
+          export PGPASSWORD
+          # PostgreSQL 18 client supports servers <=18. Secrets stay in process env.
+          docker run --rm -e SUPABASE_DB_URL postgres:18-alpine sh -c 'pg_dump --dbname="$SUPABASE_DB_URL" --format=custom --no-owner --no-acl --schema=public --schema=private --schema=auth' | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 --symmetric --cipher-algo AES256 --output backup/cadet-db.dump.gpg 3<<<"$BACKUP_PASSPHRASE"
+          test -s backup/cadet-db.dump.gpg
+      - name: Retain encrypted backup for 30 days
+        uses: actions/upload-artifact@v4
+        with:
+          name: cadet-database-${{ github.run_id }}
+          path: backup/cadet-db.dump.gpg
+          retention-days: 30
+          if-no-files-found: error
