@@ -24,10 +24,10 @@
     let present = 0, absent = 0, hours = 0;
     for (const s of eligible) {
       const a = bySession.get(s.id);
-      if (a?.status === 'present') { present++; hours += Number(s.duration_hours); }
+      if (a?.status === 'present') { present++; hours += s.duration_minutes != null ? Number(s.duration_minutes)/60 : Number(s.duration_hours); }
       if (a?.status === 'absent') absent++;
     }
-    return { present, absent, pending: eligible.length - present - absent, hours, rate: present + absent ? Math.round(present * 100 / (present + absent)) : null };
+    return { present, absent, pending: eligible.length - present - absent, hours: Math.round(hours*100)/100, rate: present + absent ? Math.round(present * 100 / (present + absent)) : null };
   }
   const HEADERS = ['รหัสนักเรียน', 'คำนำหน้า', 'ชื่อ', 'นามสกุล', 'ห้อง', 'ชั้นปี'];
   function validateImport(rows, existing = []) {
@@ -50,7 +50,22 @@
   }
   function escapeHTML(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   function csvCell(v) { let s = String(v ?? ''); if (/^[=+@-]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; }
-  const api = { STATUSES, HEADERS, fullName, bangkokDate, summarize, studentReport, validateImport, promotionPreview, escapeHTML, csvCell };
+  function weeklyDates(first='2026-11-04',last='2027-03-17') {
+    const start=new Date(first+'T00:00:00Z'),end=new Date(last+'T00:00:00Z');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(first)||!/^\d{4}-\d{2}-\d{2}$/.test(last)||!Number.isFinite(+start)||!Number.isFinite(+end)||start.toISOString().slice(0,10)!==first||end.toISOString().slice(0,10)!==last||start.getUTCDay()!==3||end<start||(+end-start)%604800000!==0)throw new Error('กรุณาระบุวันพุธแรกและสุดท้ายให้ถูกต้อง');
+    const count=(+end-start)/604800000+1;if(count>52)throw new Error('ตารางต้องไม่เกิน 52 สัปดาห์');
+    return Array.from({length:count},(_,i)=>({week_number:i+1,training_date:new Date(+start+i*604800000).toISOString().slice(0,10)}));
+  }
+  function weeklyGroups(sessions,term=2) {
+    const groups=new Map();
+    for(const s of sessions.filter(s=>Number(s.term_number)===Number(term)&&s.week_number)){
+      const key=Number(s.week_number);if(!groups.has(key))groups.set(key,{week_number:key,training_date:s.training_date,slot:s.slot,term_number:Number(term),sessions:[]});
+      groups.get(key).sessions.push(s);
+    }
+    return [...groups.values()].sort((a,b)=>a.week_number-b.week_number);
+  }
+  const api = { STATUSES, HEADERS, fullName, bangkokDate, summarize, studentReport, validateImport, promotionPreview, escapeHTML, csvCell, weeklyDates, weeklyGroups };
   if (typeof module !== 'undefined') module.exports = api;
   root.CadetCore = api;
 })(typeof window === 'undefined' ? globalThis : window);
+

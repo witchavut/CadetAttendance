@@ -73,6 +73,7 @@
       const year={id:id(),label,starts_on:date,closed:false};db.years.push(year);log('INSERT','academic_years',year.id);return year.id;
     },
     async importStudents(yearId,values,date) {
+      if(!yearId)throw new Error('กรุณาสร้างหรือเลือกปีการศึกษาก่อนนำเข้ารายชื่อ');
       if(configured) return rpc('import_students',{p_year_id:yearId,p_rows:values,p_joined_on:date});
       ensureWrite();openYear(yearId);
       const next=clone(db);
@@ -94,6 +95,32 @@
       ensureWrite(['admin','teacher']);openYear(v.year_id);
       if(db.sessions.some(s=>s.year_id===v.year_id&&s.training_year===v.training_year&&s.training_date===v.training_date&&s.slot===v.slot))throw new Error('มีรอบฝึกนี้แล้ว');
       const s={id:id(),...v,revision:0,created_by:user.id};db.sessions.push(s);log('INSERT','training_sessions',s.id);return s.id;
+    },
+    async createWeeklySchedule(yearId,term=2,first='2026-11-04',last='2027-03-17') {
+      if(!yearId)throw new Error('กรุณาเลือกปีการศึกษาก่อน');
+      if(configured)return rpc('create_weekly_schedule',{p_year_id:yearId,p_term:term,p_first_date:first,p_last_date:last,p_start_time:'14:40',p_end_time:'15:30'});
+      ensureWrite();openYear(yearId);const dates=C.weeklyDates(first,last);
+      for(const week of dates)for(const level of [1,2,3]){
+        const old=db.sessions.find(s=>s.year_id===yearId&&s.term_number===term&&s.week_number===week.week_number&&s.training_year===level);
+        if(old){if(old.training_date!==week.training_date)throw new Error('ตารางเดิมไม่ตรงกัน');continue;}
+        db.sessions.push({id:id(),year_id:yearId,training_year:level,...week,term_number:term,slot:'14:40–15:30',duration_hours:0.83,duration_minutes:50,title:`เช็กชื่อ นศท. ภาคเรียน ${term} สัปดาห์ที่ ${week.week_number}`,session_kind:'training',activity_note:'',revision:0,created_by:user.id});
+      }log('CREATE_SCHEDULE','training_sessions',String(term));return dates.length;
+    },
+    async saveWeeklyAttendance(yearId,term,week,expected,kind,note,records) {
+      if(configured)return rpc('save_weekly_attendance',{p_year_id:yearId,p_term:term,p_week:week,p_expected:expected,p_kind:kind,p_note:note,p_records:records});
+      ensureWrite(['admin','teacher']);openYear(yearId);
+      if(!['training','activity'].includes(kind)||typeof note!=='string'||note.length>500||(kind==='activity'&&!note.trim()))throw new Error('กรุณาระบุเหตุผลกรณีมีกิจกรรม');
+      const group=db.sessions.filter(s=>s.year_id===yearId&&s.term_number===term&&s.week_number===week);
+      if(group.length!==3)throw new Error('ตารางยังไม่ครบทั้ง 3 ชั้นปี');
+      const saved=JSON.parse(localStorage.getItem(demoKey)||'null');
+      if(group.some(s=>expected[s.id]!==s.revision||(saved&&saved.sessions.find(x=>x.id===s.id)?.revision!==s.revision)))throw new Error('มีผู้ใช้อื่นแก้ไขสัปดาห์นี้แล้ว กรุณาโหลดข้อมูลใหม่');
+      const next=clone(db);
+      for(const s of group){
+        const roster=next.enrollments.filter(e=>e.year_id===yearId&&e.training_year===s.training_year&&e.joined_on<=s.training_date);
+        const changes=kind==='activity'?roster.map(e=>({enrollment_id:e.id,status:'present'})):records.filter(r=>roster.some(e=>e.id===r.enrollment_id));
+        for(const r of changes){next.attendance=next.attendance.filter(a=>!(a.session_id===s.id&&a.enrollment_id===r.enrollment_id));if(r.status!=='pending')next.attendance.push({...r,session_id:s.id,recorded_by:user.id,recorded_at:new Date().toISOString()});}
+        Object.assign(next.sessions.find(x=>x.id===s.id),{session_kind:kind,activity_note:kind==='activity'?note.trim():'',revision:s.revision+1});
+      }db=next;log('SAVE_WEEK','training_sessions',`${term}/${week}`);return{week,kind};
     },
     async saveAttendance(sessionId,revision,records) {
       if(configured)return rpc('save_attendance',{p_session_id:sessionId,p_expected_revision:revision,p_records:records});
@@ -132,3 +159,4 @@
   };
   window.CadetAPI=API;
 })();
+
