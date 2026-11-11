@@ -19,7 +19,7 @@
   };
   const icon=(name)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${iconPaths[name]||iconPaths.reports}"/></svg>`;
   const btn=(label,action,kind='',symbol='')=>`<button type="button" class="btn ${kind}" data-action="${action}">${symbol?icon(symbol):''}${label}</button>`;
-  const state={page:'dashboard',level:0,yearId:localStorage.getItem('cadet-year')||'',data:{years:[],students:[],enrollments:[],sessions:[],attendance:[],profiles:[],audit:[]},user:null,sessionId:'',draft:{},search:'',importRows:[],importDate:'',collapsed:localStorage.getItem('cadet-sidebar')==='collapsed',mobile:false,busy:false};
+  const state={page:'dashboard',level:0,yearId:localStorage.getItem('cadet-year')||'',data:{years:[],students:[],enrollments:[],sessions:[],attendance:[],profiles:[],audit:[]},user:null,sessionId:'',draft:{},weeklyTerm:2,weeklyNumber:0,weeklyEdit:null,search:'',importRows:[],importDate:'',collapsed:localStorage.getItem('cadet-sidebar')==='collapsed',mobile:false,busy:false};
   let toastTimer;
   const toast=(message)=>{const el=$('#toast');el.textContent=message;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),4200);};
   const year=()=>state.data.years.find(y=>y.id===state.yearId);
@@ -28,35 +28,35 @@
   const canManage=()=>isAdmin()&&!year()?.closed;
   const enrollmentList=()=>state.data.enrollments.map(e=>({...e,student:state.data.students.find(s=>s.id===e.student_id)||{}}));
   const filteredEnrollments=()=>enrollmentList().filter(e=>(!state.level||e.training_year===state.level)&&(!state.search||[C.fullName(e.student),e.student.student_code,e.room].join(' ').toLowerCase().includes(state.search.toLowerCase())));
-  const sessions=()=>state.data.sessions.filter(s=>!state.level||s.training_year===state.level);
+  const sessions=()=>state.data.sessions.filter(s=>(!weeklyTerms().length||Number(s.term_number)===state.weeklyTerm)&&(!state.level||s.training_year===state.level));
   const selectedSession=()=>state.data.sessions.find(s=>s.id===state.sessionId);
   const roster=()=>{const s=selectedSession();return s?enrollmentList().filter(e=>e.training_year===s.training_year&&e.joined_on<=s.training_date):[];};
   const date=(v,opts={})=>v?new Intl.DateTimeFormat('th-TH',{day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Bangkok',...opts}).format(new Date(v.length===10?v+'T12:00:00+07:00':v)):'—';
   const statusBadge=(v)=>`<span class="badge ${v==='absent'?'red':v==='pending'?'gold':''}">${C.STATUSES[v]||esc(v)}</span>`;
   const empty=(title,desc,action='')=>`<div class="empty">${icon('attendance')}<h3>${title}</h3><p>${desc}</p>${action?`<div style="margin-top:18px">${action}</div>`:''}</div>`;
-  const changed=()=>Object.keys(state.draft).length>0;
+  const changed=()=>Object.keys(state.draft).length>0||state.weeklyEdit!==null;
   const mayLeave=()=>!changed()||confirm('ยังมีรายการเช็กชื่อที่ไม่ได้บันทึก ต้องการออกจากหน้านี้หรือไม่?');
-  const levelTabs=()=>`<div class="level-tabs" role="group" aria-label="เลือกชั้นปี">${[0,1,2,3].filter(n=>state.page!=='attendance'||n!==0).map(n=>`<button type="button" class="${state.level===n?'selected':''}" aria-pressed="${state.level===n}" data-action="level" data-value="${n}">${n?'ชั้นปีที่ '+n:'ทุกชั้นปี'}</button>`).join('')}</div>`;
+  const levelTabs=()=>`<div class="level-tabs" role="group" aria-label="เลือกชั้นปี">${[0,1,2,3].filter(n=>state.page!=='attendance'||weekGroups().length||n!==0).map(n=>`<button type="button" class="${state.level===n?'selected':''}" aria-pressed="${state.level===n}" data-action="level" data-value="${n}">${n?'ชั้นปีที่ '+n:'ทุกชั้นปี'}</button>`).join('')}</div>`;
   const heading=(eyebrow,title,desc,actions='')=>`<div class="heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${desc}</p></div><div class="actions">${actions}</div></div>`;
   function searchField(placeholder='ค้นหารหัส ชื่อ หรือห้องเรียน') {return `<div class="search">${icon('search')}<input id="search" type="search" autocomplete="off" placeholder="${placeholder}" aria-label="${placeholder}" value="${esc(state.search)}"></div>`;}
   function activeMenu(p){return `<button type="button" data-action="navigate" data-page="${p}" class="${state.page===p?'active':''}" title="${pages[p]}" ${state.page===p?'aria-current="page"':''}>${icon(p)}<span class="nav-text">${pages[p]}</span></button>`;}
   function render() {
     if(!state.user){renderLogin();return;}
-    if(!state.user.enabled){$('#app').innerHTML=`<div class="login"><div class="card login-box"><img src="icon.svg" width="48" alt=""><h2 style="margin-top:15px">บัญชียังไม่ได้เปิดสิทธิ์</h2><p class="guide">กรุณาให้ผู้ดูแลระบบเปิดใช้งานบัญชี ${esc(state.user.email)}</p>${btn('ออกจากระบบ','logout')}</div></div>`;return;}
+    if(!state.user.enabled){$('#app').innerHTML=`<div class="login"><div class="card login-box"><img src="school-logo.png" style="object-fit:contain" width="48" alt=""><h2 style="margin-top:15px">บัญชียังไม่ได้เปิดสิทธิ์</h2><p class="guide">กรุณาให้ผู้ดูแลระบบเปิดใช้งานบัญชี ${esc(state.user.email)}</p>${btn('ออกจากระบบ','logout')}</div></div>`;return;}
     const content={dashboard:renderDashboard,attendance:renderAttendance,students:renderStudents,import:renderImport,reports:renderReports,years:renderYears,users:renderUsers,audit:renderAudit,settings:renderSettings}[state.page]();
     $('#app').innerHTML=`<div class="layout ${state.collapsed?'collapsed':''} ${state.mobile?'mobile-open':''}">
       <button class="overlay" type="button" data-action="menu" aria-label="ปิดเมนู"></button>
-      <aside class="sidebar" aria-label="เมนูหลัก" ${innerWidth<=700&&!state.mobile?'inert':''}><div class="brand"><img src="icon.svg" alt="ตราระบบ นศท."><div class="brand-text"><b>นศท. Connect</b><small>CADET ATTENDANCE</small></div></div>
+      <aside class="sidebar" aria-label="เมนูหลัก" ${innerWidth<=700&&!state.mobile?'inert':''}><div class="brand"><img src="school-logo.png" style="object-fit:contain" alt="ตราโรงเรียนเมืองกาฬสินธุ์"><div class="brand-text"><b>นศท. Connect</b><small>CADET ATTENDANCE</small></div></div>
       <div class="nav-label">WORKSPACE</div><nav class="nav">${['dashboard','attendance','students',...(isAdmin()?['import']:[]),'reports'].map(activeMenu).join('')}</nav>
       <div class="nav-label" style="margin-top:23px">MANAGEMENT</div><nav class="nav">${[...(isAdmin()?['years','users','audit']:[]),'settings'].map(activeMenu).join('')}</nav>
       <div class="sidebar-bottom"><div class="term">การฝึกนักศึกษาวิชาทหาร<b>ปีการศึกษา ${year()?.label||'—'}</b><span>${year()?.closed?'ปิดปีแล้ว · ดูประวัติย้อนหลัง':'ชั้นปีที่ 1–3'}</span></div>
-      <div class="user"><div class="avatar">${icon('shield')}</div><div class="user-text"><b>${esc(state.user.display_name)}</b><small>${roles[state.user.role]}</small></div><button class="icon-btn logout" type="button" data-action="logout" aria-label="ออกจากระบบ" title="ออกจากระบบ">${icon('logout')}</button></div></div></aside>
+      <div class="user"><div class="avatar"><img src="school-logo.png" width="25" height="28" style="object-fit:contain" alt="ตราโรงเรียน"></div><div class="user-text"><b>${esc(state.user.display_name)}</b><small>${roles[state.user.role]}</small></div><button class="icon-btn logout" type="button" data-action="logout" aria-label="ออกจากระบบ" title="ออกจากระบบ">${icon('logout')}</button></div></div></aside>
       <main class="main" ${innerWidth<=700&&state.mobile?'inert':''}><header class="topbar"><button class="icon-btn" type="button" data-action="menu" aria-label="${innerWidth<=700?(state.mobile?'ปิด':'เปิด'):(state.collapsed?'ขยาย':'ยุบ')}เมนู" aria-expanded="${window.innerWidth<=700?state.mobile:!state.collapsed}">${icon('menu')}</button><div class="breadcrumb"><span>${esc(window.CADET_CONFIG.schoolName||'ระบบนักศึกษาวิชาทหาร')}</span><span>/</span><b>${pages[state.page]}</b></div><div class="online ${API.demo?'demo':''}">${API.demo?'โหมดทดลอง · ข้อมูลตัวอย่าง':'เชื่อมต่อฐานข้อมูลจริง'}</div><select id="year-select" aria-label="ปีการศึกษา">${state.data.years.map(y=>`<option value="${y.id}" ${y.id===state.yearId?'selected':''}>ปีการศึกษา ${y.label}${y.closed?' · ปิดปีแล้ว':''}</option>`).join('')||'<option>ยังไม่มีปีการศึกษา</option>'}</select></header>
       <div class="content" id="content" tabindex="-1">${year()?.closed&&state.page!=='years'?'<div class="callout">กำลังดูประวัติปีการศึกษาที่ปิดแล้ว ข้อมูลถูกเก็บไว้และไม่เปิดให้แก้ไข</div>':''}${content}<footer class="footer"><span>นศท. Connect · ${esc(window.CADET_CONFIG.schoolName||'ระบบเช็กชื่อ นศท.')}</span><span>บันทึกการฝึกอย่างเป็นระบบ ทุกปีการศึกษา</span></footer></div></main></div>`;
   }
   function renderDashboard() {
     const es=filteredEnrollments(),ss=sessions(),sum=C.summarize(es,ss,state.data.attendance);
-    const latest=[...ss].sort((a,b)=>b.training_date.localeCompare(a.training_date)||b.slot.localeCompare(a.slot)).slice(0,4);
+    const today=C.bangkokDate();const latest=[...ss].sort((a,b)=>{const ap=a.training_date<=today,bp=b.training_date<=today;return ap!==bp?(ap?-1:1):ap?b.training_date.localeCompare(a.training_date):a.training_date.localeCompare(b.training_date);}).slice(0,4);
     const kpis=[['students',es.length,'นักศึกษาทั้งหมด','คน · ตามชั้นปีที่เลือก',''],['check',sum.present,'มาเข้าฝึก','รายการเช็กชื่อที่บันทึกแล้ว',''],['close',sum.absent,'ขาดการฝึก','เฉพาะรายการที่ระบุว่าขาด','red'],['clock',sum.pending,'ยังไม่บันทึก','ไม่นับรวมเป็นการขาด','gold']];
     const total=sum.expected||1,pctPresent=sum.present/total*100,pctAbsent=sum.absent/total*100;
     return heading('OVERVIEW','ภาพรวมการฝึก','ติดตามการเข้าฝึกและจัดการข้อมูลนักศึกษาวิชาทหาร',btn('ดาวน์โหลดรายงาน','goto-reports','','download')+btn('เช็กชื่อการฝึก','goto-attendance','primary','plus'))+
@@ -67,12 +67,77 @@
       <section class="card page-card"><div class="card-head"><div><h2>รอบฝึกล่าสุด</h2><p>เลือกเพื่อดูรายชื่อและบันทึกการเข้าฝึก</p></div>${btn('ดูรอบฝึกทั้งหมด','goto-attendance','ghost sm','arrow')}</div>${latest.length?`<div class="table-wrap"><table class="table"><thead><tr><th>วันที่ฝึก</th><th>รายละเอียด</th><th>ชั้นปี</th><th>สถานะ</th><th></th></tr></thead><tbody>${latest.map(s=>{const list=es.filter(e=>e.training_year===s.training_year&&e.joined_on<=s.training_date),st=C.summarize(list,[s],state.data.attendance);return `<tr><td class="num">${date(s.training_date)}<small>${esc(s.slot)}</small></td><td class="name">${esc(s.title)}</td><td><span class="badge gray">ปี ${s.training_year}</span></td><td><span class="badge ${st.pending?'gold':''}">${st.pending?'บันทึก '+(st.present+st.absent)+' / '+list.length:'บันทึกครบแล้ว'}</span></td><td><button class="btn ghost sm" data-action="open-session" data-id="${s.id}">${icon('arrow')}<span class="small">เปิด</span></button></td></tr>`;}).join('')}</tbody></table></div>`:empty('ยังไม่มีรอบฝึก','สร้างรอบฝึกเพื่อเริ่มบันทึกการเข้าฝึก',canCheck()?btn('สร้างรอบฝึก','new-session','primary','plus'):'')}</section>`;
   }
   function chooseSession() {
-    if(!sessions().some(s=>s.id===state.sessionId)) {state.sessionId=[...sessions()].sort((a,b)=>b.training_date.localeCompare(a.training_date))[0]?.id||'';state.draft={};}
+    if(!sessions().some(s=>s.id===state.sessionId)) {state.sessionId=[...sessions()].sort((a,b)=>b.training_date.localeCompare(a.training_date))[0]?.id||'';state.draft={};state.weeklyEdit=null;}
   }
+  const weekGroups=()=>C.weeklyGroups(state.data.sessions,state.weeklyTerm);
+  const weeklyTerms=()=>[...new Set(state.data.sessions.filter(s=>s.term_number).map(s=>Number(s.term_number)))].sort();
+  const selectedWeek=()=>weekGroups().find(w=>w.week_number===state.weeklyNumber);
+  const weeklyRoster=()=>{const w=selectedWeek();return w?enrollmentList().filter(e=>e.joined_on<=w.training_date).sort((a,b)=>a.training_year-b.training_year||a.student.student_code.localeCompare(b.student.student_code,undefined,{numeric:true})):[];};
+  const weeklyVisible=()=>weeklyRoster().filter(e=>(!state.level||e.training_year===state.level)&&(!state.search||[C.fullName(e.student),e.student.student_code,e.room].join(' ').toLowerCase().includes(state.search.toLowerCase())));
+  const weeklyMeta=()=>state.weeklyEdit||{kind:selectedWeek()?.sessions[0]?.session_kind||'training',note:selectedWeek()?.sessions[0]?.activity_note||''};
+  const weeklyRecord=(e)=>{const s=selectedWeek()?.sessions.find(s=>s.training_year===e.training_year);return state.data.attendance.find(a=>a.session_id===s?.id&&a.enrollment_id===e.id);};
+  const weeklyStatus=(e)=>state.weeklyEdit?.kind==='activity'?'present':state.draft[e.id]??weeklyRecord(e)?.status??'pending';
+  const weeklyNeedsSave=()=>changed()||(weeklyMeta().kind==='activity'&&weeklyRoster().some(e=>weeklyRecord(e)?.status!=='present'));
+  function selectInitialWeek(){
+    const groups=weekGroups();if(groups.some(w=>w.week_number===state.weeklyNumber))return;
+    state.weeklyNumber=(groups.filter(w=>w.training_date<=C.bangkokDate()).at(-1)||groups[0])?.week_number||0;
+  }
+  function weeklySetup(){if(year()?.label!==2569)return '';return `<section class="card" style="margin-bottom:22px"><h2>เช็กชื่อรายสัปดาห์ ภาคเรียน 2/${year()?.label||'2569'}</h2><p class="guide" style="margin:12px 0">ทุกวันพุธ 14:40–15:30 · 4 พ.ย. 2569 – 17 มี.ค. 2570 · 20 สัปดาห์<br>รวมรายชื่อทั้ง 3 ชั้นปี และเลือกสัปดาห์มีกิจกรรมเพื่อให้สถานะมาแก่ทุกคนได้</p>${canManage()?btn('สร้างตาราง 20 สัปดาห์','setup-weekly','primary','years'):'<div class="note">ให้ผู้ดูแลสร้างตารางประจำภาคเรียนก่อน</div>'}</section>`;}
+  function weeklySummary(){const list=weeklyRoster(),n={present:0,absent:0,pending:0};for(const e of list)n[weeklyStatus(e)]++;return `มา <strong>${n.present}</strong> · ขาด <strong>${n.absent}</strong> · ยังไม่บันทึก <strong>${n.pending}</strong> คน ${changed()?'<span class="badge gold">มีข้อมูลรอบันทึก</span>':'<span class="muted">ข้อมูลที่บันทึกแล้ว</span>'}`;}
+  function weeklyAttendanceTable(){
+    const list=weeklyVisible(),activity=weeklyMeta().kind==='activity';
+    if(!list.length)return empty('ไม่พบรายชื่อ','ตรวจคำค้น ชั้นปี และวันเริ่มนับการฝึกของทะเบียน');
+    return `<div class="table-wrap"><table class="table"><thead><tr><th>ลำดับ</th><th>นักศึกษา</th><th>ชั้นปี / ห้อง</th><th>สถานะ</th><th class="optional">บันทึกล่าสุด</th></tr></thead><tbody>${list.map((e,i)=>{const a=weeklyRecord(e),st=weeklyStatus(e),actor=state.data.profiles.find(p=>p.id===a?.recorded_by);return `<tr><td class="muted">${i+1}</td><td class="name">${esc(C.fullName(e.student))}<small>${esc(e.student.student_code)}</small></td><td>ปี ${e.training_year}<small>${esc(e.room)||'—'}</small></td><td>${canCheck()&&!activity?`<div class="status-control" role="group" aria-label="สถานะ ${esc(C.fullName(e.student))}">${['present','absent','pending'].map(v=>`<button type="button" class="${st===v?'on ':''}${v}" aria-pressed="${st===v}" data-action="weekly-status" data-id="${e.id}" data-status="${v}">${C.STATUSES[v]}</button>`).join('')}</div>`:statusBadge(st)+(activity?'<small class="muted">นับมา · กิจกรรม</small>':'')}</td><td class="optional muted">${state.draft[e.id]!==undefined||state.weeklyEdit?'รอบันทึก':a?esc(actor?.display_name||'ผู้บันทึก')+'<small>'+date(a.recorded_at,{hour:'2-digit',minute:'2-digit'})+'</small>':'—'}</td></tr>`;}).join('')}</tbody></table></div>`;
+  }
+  function renderWeeklyAttendance(){
+    selectInitialWeek();const groups=weekGroups(),w=selectedWeek(),meta=weeklyMeta(),list=weeklyRoster();
+    return `<style>.week-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:18px 0}.week-tile{border:1px solid var(--line);background:var(--white,#fff);border-radius:10px;padding:12px;text-align:left;cursor:pointer;color:inherit;font:inherit;line-height:1.6}.week-tile[aria-pressed=true]{outline:2px solid #245343;background:#edf3eb}.week-tile small{display:block;font-size:11px;color:#6c776d}.week-tile b{font-size:13px}.weekly-mode{display:flex;align-items:center;gap:12px;padding:18px;background:#f5f7ef;border:1px solid var(--line);border-radius:10px}.weekly-mode input{width:20px;height:20px;accent-color:#245343}.weekly-editor{padding:22px;border-bottom:1px solid var(--line)}.weekly-term{max-width:220px}.weekly-note{min-height:80px;resize:vertical}@media(max-width:700px){.week-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.week-tile{padding:8px}.week-tile small{font-size:10px}.weekly-editor{padding:16px}.weekly-mode{padding:13px}}</style>`+
+      heading('WEEKLY ATTENDANCE',`เช็กชื่อ ภาคเรียน ${state.weeklyTerm}/${year()?.label||'—'}`,'ทุกวันพุธ เวลา 14:40–15:30 · เลือกสัปดาห์แล้วเช็กชื่อได้ทั้ง 3 ชั้นปี',btn('โหลดข้อมูลใหม่','refresh','','refresh'))+
+      `<div class="toolbar"><span class="badge gray">${date(groups[0]?.training_date)} – ${date(groups.at(-1)?.training_date)} · ${groups.length} สัปดาห์</span>${weeklyTerms().length>1?`<select id="weekly-term-select" class="field-select weekly-term" aria-label="ภาคเรียน">${weeklyTerms().map(t=>`<option value="${t}" ${t===state.weeklyTerm?'selected':''}>ภาคเรียน ${t}/${year()?.label}</option>`).join('')}</select>`:''}<span class="muted small">${enrollmentList().length} คน</span></div>`+
+      `<div class="week-grid" aria-label="เลือกสัปดาห์">${groups.map(g=>{const es=enrollmentList().filter(e=>e.joined_on<=g.training_date),sum=C.summarize(es,g.sessions,state.data.attendance),activity=g.sessions[0].session_kind==='activity';return `<button type="button" class="week-tile" data-action="weekly-select" data-week="${g.week_number}" aria-pressed="${g.week_number===w.week_number}"><b>สัปดาห์ ${g.week_number}</b><small>${date(g.training_date,{year:undefined})}</small><small>${activity?'มีกิจกรรม':sum.present+sum.absent?'บันทึก '+(sum.present+sum.absent)+'/'+es.length:'ยังไม่บันทึก'}</small></button>`;}).join('')}</div>`+
+      `<section class="card page-card"><div class="weekly-editor"><div class="card-head"><div><h2>สัปดาห์ที่ ${w.week_number} · ${date(w.training_date)}</h2><p>${esc(w.slot)} · 50 นาที · ${list.length} คน</p></div>${year()?.closed?'<span class="badge gray">ปิดปีแล้ว</span>':''}</div><label class="weekly-mode"><input id="weekly-activity" type="checkbox" ${meta.kind==='activity'?'checked':''} ${canCheck()?'':'disabled'}><span><strong>ไม่ได้เรียน / มีกิจกรรม</strong><small class="muted" style="display:block">เมื่อบันทึก จะเช็ก “มา” ให้ นศท. ทั้ง ${list.length} คนในสัปดาห์นี้</small></span></label>${meta.kind==='activity'?`<label class="field" style="margin-top:16px">เหตุผล / ชื่อกิจกรรม<textarea id="weekly-note" class="weekly-note" maxlength="500" placeholder="เช่น กีฬาสีโรงเรียน หรือกิจกรรมวันสำคัญ" ${canCheck()?'':'disabled'}>${esc(meta.note)}</textarea></label><div class="note" style="margin-top:12px">${changed()?'เป็นตัวอย่างก่อนบันทึก กดปุ่มยืนยันด้านล่างเพื่อบันทึกเหตุผลและสถานะมาทุกคน':'บันทึกเหตุผลไว้แล้ว รายการเช็กชื่อของทุกคนเป็นสถานะมา'}</div>`:''}</div>`+
+      `<div class="toolbar">${levelTabs()}${searchField()}${canCheck()&&meta.kind==='training'?btn('มาทั้งรายชื่อที่แสดง','weekly-mark-present','sm','check'):''}</div><div id="weekly-attendance-table">${weeklyAttendanceTable()}</div><div class="savebar"><p id="weekly-summary">${weeklySummary()}</p>${canCheck()?`<button type="button" class="btn primary" data-action="save-weekly" ${weeklyNeedsSave()?'':'disabled'}>${icon('check')}${meta.kind==='activity'?'บันทึกกิจกรรมและมาทุกคน':'บันทึกการเช็กชื่อ'}</button>`:'<span class="muted small">ดูข้อมูลอย่างเดียว</span>'}</div></section>`;
+  }
+  function refreshWeekly(){const table=$('#weekly-attendance-table');if(table)table.innerHTML=weeklyAttendanceTable();const summary=$('#weekly-summary');if(summary)summary.innerHTML=weeklySummary();const save=$('[data-action="save-weekly"]');if(save)save.disabled=!weeklyNeedsSave();}
+  async function weeklyAction(action,el){
+    if(action==='setup-weekly'){
+      if(!year()||!canManage())throw new Error('กรุณาเลือกปีการศึกษาที่เปิดใช้งาน');
+      if(year().label!==2569)throw new Error('ตารางตั้งต้นนี้ใช้สำหรับภาคเรียน 2/2569');
+      if(!confirm('สร้างตารางวันพุธ 20 สัปดาห์ 4 พ.ย. 2569 ถึง 17 มี.ค. 2570 เวลา 14:40–15:30 หรือไม่? สถานะเริ่มต้นยังไม่บันทึกทุกคน'))return;
+      await API.createWeeklySchedule(state.yearId);state.weeklyTerm=2;state.weeklyNumber=0;state.level=0;await reload();toast('สร้างตารางครบ 20 สัปดาห์แล้ว');return;
+    }
+    if(action==='weekly-select'){if(!mayLeave())return;state.weeklyNumber=Number(el.dataset.week);state.draft={};state.weeklyEdit=null;render();return;}
+    if(!canCheck())throw new Error('ไม่มีสิทธิ์แก้ไขการเช็กชื่อ');
+    if(action==='weekly-status'){
+      if(weeklyMeta().kind==='activity')return;
+      const e=weeklyRoster().find(e=>e.id===el.dataset.id);if(!e)return;const original=weeklyRecord(e)?.status||'pending';
+      if(original===el.dataset.status)delete state.draft[e.id];else state.draft[e.id]=el.dataset.status;refreshWeekly();return;
+    }
+    if(action==='weekly-mark-present'){
+      const list=weeklyVisible();if(!confirm(`ระบุ “มา” ให้ ${list.length} รายชื่อที่แสดงหรือไม่?`))return;
+      for(const e of list){if(weeklyRecord(e)?.status==='present')delete state.draft[e.id];else state.draft[e.id]='present';}refreshWeekly();return;
+    }
+    if(action==='save-weekly'){
+      const w=selectedWeek(),meta=weeklyMeta(),list=weeklyRoster();
+      if(meta.kind==='activity'&&!meta.note.trim())throw new Error('กรุณาพิมพ์เหตุผลหรือชื่อกิจกรรมก่อนบันทึก');
+      if(meta.kind==='activity'&&!confirm(`ยืนยันกิจกรรม “${meta.note.trim()}” และเช็กมาให้ทั้ง ${list.length} คน ในสัปดาห์ที่ ${w.week_number} หรือไม่?`))return;
+      const records=list.map(e=>({enrollment_id:e.id,status:weeklyStatus(e)})),expected=Object.fromEntries(w.sessions.map(s=>[s.id,s.revision]));
+      await API.saveWeeklyAttendance(state.yearId,state.weeklyTerm,w.week_number,expected,meta.kind,meta.note,records);
+      await reload();toast(meta.kind==='activity'?`บันทึกกิจกรรมและมา ${list.length} คนแล้ว`:'บันทึกการเช็กชื่อรายสัปดาห์แล้ว');
+    }
+  }
+  function weeklyReportSheets(){
+    const groups=weekGroups();if(!groups.length)return[];
+    const headers=['รหัสนักเรียน','ชื่อ–นามสกุล','ชั้นปี',...groups.map(g=>`สัปดาห์ ${g.week_number} · ${date(g.training_date)}`),'มา','ขาด','ยังไม่บันทึก'];
+    const rows=filteredEnrollments().map(e=>{const r=C.studentReport(e,groups.flatMap(g=>g.sessions),state.data.attendance);return[e.student.student_code,C.fullName(e.student),e.training_year,...groups.map(g=>{const s=g.sessions.find(s=>s.training_year===e.training_year);if(!s||e.joined_on>g.training_date)return'ยังไม่เริ่มเรียน';const a=state.data.attendance.find(a=>a.session_id===s.id&&a.enrollment_id===e.id);return a?(C.STATUSES[a.status]+(s.session_kind==='activity'?' (กิจกรรม)':'')):'ยังไม่บันทึก';}),r.present,r.absent,r.pending];});
+    return[[`ภาคเรียน ${state.weeklyTerm}`,[headers,...rows]],['กิจกรรมรายสัปดาห์',[['สัปดาห์','วันที่','เวลา','ประเภท','เหตุผล / ชื่อกิจกรรม'],...groups.map(g=>[g.week_number,g.training_date,g.slot,g.sessions[0].session_kind==='activity'?'ไม่ได้เรียน / มีกิจกรรม':'เรียนตามปกติ',g.sessions[0].activity_note||''])]]];
+  }
+
   function renderAttendance() {
+    if(weekGroups().length)return renderWeeklyAttendance();
     if(!state.level)state.level=1;chooseSession();
     const ss=[...sessions()].sort((a,b)=>b.training_date.localeCompare(a.training_date)),s=selectedSession(),list=roster();
-    return heading('ATTENDANCE','เช็กชื่อการฝึก','เลือกชั้นปีและรอบฝึก แล้วระบุเฉพาะสถานะที่ตรวจสอบแล้ว',btn('โหลดข้อมูลใหม่','refresh','','refresh')+(canCheck()?btn('สร้างรอบฝึก','new-session','primary','plus'):''))+levelTabs()+
+    return weeklySetup()+heading('ATTENDANCE','เช็กชื่อการฝึก','เลือกชั้นปีและรอบฝึก แล้วระบุเฉพาะสถานะที่ตรวจสอบแล้ว',btn('โหลดข้อมูลใหม่','refresh','','refresh')+(canCheck()?btn('สร้างรอบฝึก','new-session','primary','plus'):''))+levelTabs()+
       (s?`<div class="callout ${year()?.closed?'':'success'}">${esc(s.title)} · ${date(s.training_date)} · ${esc(s.slot)} · ${s.duration_hours} ชั่วโมง <span class="muted">| รายชื่อ ${list.length} คน</span></div>`:'')+
       `<section class="card page-card"><div class="toolbar"><select id="session-select" class="field-select" aria-label="เลือกรอบฝึก">${ss.map(s=>`<option value="${s.id}" ${s.id===state.sessionId?'selected':''}>${date(s.training_date)} · ${esc(s.slot)} · ${esc(s.title)}</option>`).join('')||'<option>ยังไม่มีรอบฝึก</option>'}</select>${searchField()}${canCheck()&&s?btn('ระบุ “มา” ทั้งรายชื่อที่แสดง','mark-present','sm','check'):''}</div><div id="attendance-table">${attendanceTable()}</div>${s?`<div class="savebar"><p id="draft-count">${draftSummary()}</p>${canCheck()?`<button type="button" class="btn primary" data-action="save-attendance" ${changed()?'':'disabled'}>${icon('check')}บันทึกการเช็กชื่อ</button>`:'<span class="muted small">ดูข้อมูลอย่างเดียว</span>'}</div>`:''}</section>`;
   }
@@ -90,6 +155,7 @@
   function studentsTable() {const es=filteredEnrollments();return es.length?`<div class="table-wrap"><table class="table"><thead><tr><th>รหัสนักเรียน</th><th>ชื่อ–นามสกุล</th><th>ชั้นปี</th><th>ห้อง</th><th>ผลการฝึก</th><th>การจัดการ</th></tr></thead><tbody>${es.map(e=>`<tr><td class="num">${esc(e.student.student_code)}</td><td class="name">${esc(C.fullName(e.student))}</td><td><span class="badge gray">ปี ${e.training_year}</span></td><td>${esc(e.room)||'—'}</td><td><span class="badge ${e.result==='failed'?'red':e.result==='pending'?'gold':''}">${results[e.result]}</span></td><td><button type="button" class="btn ghost sm" data-action="student-detail" data-id="${e.id}">${icon(canManage()?'edit':'reports')}${canManage()?'ห้อง / ผลการฝึก':'ดูประวัติ'}</button></td></tr>`).join('')}</tbody></table></div>`:empty('ยังไม่มีทะเบียนที่ตรงกัน','เพิ่มรายชื่อหรือนำเข้า Excel ในปีการศึกษานี้');}
   function renderImport() {
     if(!isAdmin())return empty('ไม่มีสิทธิ์','เฉพาะผู้ดูแลระบบเท่านั้น');
+    if(!year())return empty('ยังไม่มีปีการศึกษา','สร้างปีการศึกษาก่อนนำเข้ารายชื่อ',btn('เพิ่มปีการศึกษา','new-year','primary','plus'));
     const invalid=state.importRows.filter(r=>r.errors.length).length;
     return heading('IMPORT STUDENTS','นำเข้าทะเบียน Excel','ตรวจสอบรายชื่อก่อนนำเข้า ข้อมูลจะบันทึกพร้อมกันเมื่อผ่านการตรวจครบทุกแถว',btn('ดาวน์โหลดแบบฟอร์ม .xlsx','template','','download'))+
       `<div class="two-col"><section class="card"><div class="card-head"><div><h2>เพิ่มรายชื่อจากไฟล์</h2><p>ปีการศึกษา ${year()?.label||'—'}</p></div><span class="badge gray">EXCEL / CSV</span></div><label class="upload">${icon('import')}<b>เลือกไฟล์ทะเบียนนักศึกษา</b><small>.xlsx หรือ .csv · ไม่เกิน 5 MB และ 2,000 รายชื่อ</small><input id="import-file" type="file" accept=".xlsx,.csv" ${canManage()?'':'disabled'}></label><label class="field" style="margin-top:18px">เริ่มนับรอบฝึกตั้งแต่วันที่<input id="import-date" type="date" value="${state.importDate||year()?.starts_on||C.bangkokDate()}" required></label><div id="import-error" class="error"></div></section><section class="card"><h2>เตรียมไฟล์อย่างไร</h2><div class="guide"><ol><li>ดาวน์โหลดแบบฟอร์ม แล้วกรอกในชีต <b>ทะเบียน</b></li><li>ใช้หัวคอลัมน์ตามแบบฟอร์ม: ${C.HEADERS.join(' · ')}</li><li>ชั้นปีใช้เลข <b>1, 2 หรือ 3</b> และรหัสนักเรียนต้องไม่ซ้ำ</li><li>เก็บรหัสนักเรียนเป็นข้อความเพื่อคงเลขศูนย์ด้านหน้า</li><li>ตรวจตัวอย่างด้านล่าง แล้วกดยืนยันนำเข้า</li></ol></div><div class="note">หากมีแถวผิด ระบบจะยังไม่บันทึกทั้งไฟล์ เพื่อให้แก้ข้อมูลได้ครบก่อนนำเข้า</div></section></div>
@@ -97,7 +163,7 @@
   }
   function reportRows() {return filteredEnrollments().map(e=>({e,...C.studentReport(e,sessions(),state.data.attendance)}));}
   function renderReports() {
-    return heading('TRAINING REPORTS','รายงานการฝึก','สรุปรายบุคคล และดาวน์โหลดตารางรายรอบพร้อมสถานะที่ยังไม่บันทึก',btn('พิมพ์ / บันทึก PDF','print','','print')+btn('ดาวน์โหลด Excel','export-report','primary','download'))+levelTabs()+`<div class="note" style="margin-bottom:18px">อัตราเข้าฝึก = มา ÷ (มา + ขาด) · คำนวณจากรายการที่บันทึกแล้วเท่านั้น · ชั่วโมงสะสมคิดเฉพาะสถานะ “มา”</div><section class="card page-card"><div class="toolbar">${searchField()}<span class="muted small">ปีการศึกษา ${year()?.label||'—'} · ${filteredEnrollments().length} รายชื่อ</span></div><div id="reports-table">${reportsTable()}</div></section>`;
+    return heading('TRAINING REPORTS',weekGroups().length?`รายงานภาคเรียน ${state.weeklyTerm}/${year()?.label}`:'รายงานการฝึก',weekGroups().length?'ดาวน์โหลดตารางรายคนครบ 20 สัปดาห์ พร้อมเหตุผลสัปดาห์มีกิจกรรม':'สรุปรายบุคคล และดาวน์โหลดตารางรายรอบพร้อมสถานะที่ยังไม่บันทึก',btn('พิมพ์ / บันทึก PDF','print','','print')+btn('ดาวน์โหลด Excel','export-report','primary','download'))+levelTabs()+`<div class="note" style="margin-bottom:18px">อัตราเข้าฝึก = มา ÷ (มา + ขาด) · คำนวณจากรายการที่บันทึกแล้วเท่านั้น · ชั่วโมงสะสมคิดเฉพาะสถานะ “มา”</div><section class="card page-card"><div class="toolbar">${searchField()}<span class="muted small">ปีการศึกษา ${year()?.label||'—'} · ${filteredEnrollments().length} รายชื่อ</span></div><div id="reports-table">${reportsTable()}</div></section>`;
   }
   function reportsTable(){const rows=reportRows();return rows.length?`<div class="table-wrap"><table class="table"><thead><tr><th>รหัส / ชื่อ–นามสกุล</th><th>ชั้นปี / ห้อง</th><th>มา</th><th>ขาด</th><th>ยังไม่บันทึก</th><th>ชั่วโมงสะสม</th><th>อัตราเข้าฝึก</th></tr></thead><tbody>${rows.map(r=>`<tr><td class="name">${esc(C.fullName(r.e.student))}<small>${esc(r.e.student.student_code)}</small></td><td>ปี ${r.e.training_year}<small>${esc(r.e.room)||'—'}</small></td><td><span class="badge">${r.present}</span></td><td><span class="badge ${r.absent?'red':'gray'}">${r.absent}</span></td><td><span class="badge ${r.pending?'gold':'gray'}">${r.pending}</span></td><td class="num">${r.hours.toLocaleString('th-TH')}</td><td>${r.rate===null?'—':r.rate+'%'}</td></tr>`).join('')}</tbody></table></div>`:empty('ยังไม่มีข้อมูลรายงาน','เพิ่มทะเบียนและสร้างรอบฝึกก่อน');}
   function renderYears(){
@@ -122,7 +188,7 @@
     return heading('SETTINGS','การตั้งค่าและสำรองข้อมูล','ตรวจสอบสถานะระบบและเก็บสำเนาข้อมูลสำหรับผู้ดูแล')+`<div class="two-col"><section class="card"><div class="card-head"><div><h2>สถานะระบบ</h2><p>${esc(window.CADET_CONFIG.schoolName||'ระบบเช็กชื่อ นศท.')}</p></div><span class="badge ${API.demo?'gold':''}">${API.demo?'ทดลองใช้งาน':'เชื่อมต่อแล้ว'}</span></div><div class="guide"><p>เขตเวลา: ประเทศไทย (Asia/Bangkok)</p><p>สถานะเช็กชื่อ: มา / ขาด</p><p>ยังไม่เช็ก: ยังไม่บันทึก</p><p>ผู้ใช้ปัจจุบัน: ${esc(state.user.display_name)}</p></div>${API.demo?`<div class="callout" style="margin-top:18px">ข้อมูลตัวอย่างเก็บเฉพาะเบราว์เซอร์นี้ เมื่อต่อฐานข้อมูลจริงจะเริ่มจากทะเบียนว่าง</div>${btn('เริ่มข้อมูลทดลองใหม่','reset-demo','danger','refresh')}`:''}</section><section class="card"><h2>สำรองข้อมูล</h2><p class="guide" style="margin-top:15px">${isAdmin()?'ดาวน์โหลดข้อมูลทุกปี พร้อมทะเบียน รอบฝึก รายการเช็กชื่อ สิทธิ์ และประวัติการแก้ไข เป็นไฟล์ JSON':'การสำรองข้อมูลทั้งหมดเปิดให้ผู้ดูแลระบบเท่านั้น'}</p>${isAdmin()?`<div style="margin-top:20px">${btn('ดาวน์โหลดสำเนาข้อมูลทั้งหมด','backup','primary','download')}</div><div class="note" style="margin-top:20px">ไฟล์นี้เป็นสำเนาข้อมูลแอป ไม่รวมรหัสผ่านบัญชีผู้ใช้ การสำรองฐานข้อมูลอัตโนมัติให้เปิดใช้ตามคู่มือติดตั้งที่แนบมากับระบบ</div>`:''}</section></div>`;
   }
   function renderLogin(){
-    $('#app').innerHTML=`<div class="login"><section class="card login-box"><div class="login-brand"><img src="icon.svg" alt="ตรา นศท."><div><div class="eyebrow">CADET ATTENDANCE</div><h2>นศท. Connect</h2></div></div><h1>เข้าสู่ระบบ</h1><p class="guide" style="margin-top:8px">${esc(window.CADET_CONFIG.schoolName||'ระบบเช็กชื่อ นศท.')}</p><form id="login-form"><label class="field">อีเมล<input name="email" type="email" required autocomplete="username"></label><label class="field">รหัสผ่าน<input name="password" type="password" required autocomplete="current-password"></label><div id="login-error" class="error"></div><button class="btn primary" type="submit">เข้าสู่ระบบ ${icon('arrow')}</button></form><div class="note" style="margin-top:23px">ใช้บัญชีที่ผู้ดูแลระบบสร้างให้</div></section></div>`;
+    $('#app').innerHTML=`<div class="login"><section class="card login-box"><div class="login-brand"><img src="school-logo.png" style="object-fit:contain" alt="ตราโรงเรียนเมืองกาฬสินธุ์"><div><div class="eyebrow">CADET ATTENDANCE</div><h2>นศท. Connect</h2></div></div><h1>เข้าสู่ระบบ</h1><p class="guide" style="margin-top:8px">${esc(window.CADET_CONFIG.schoolName||'ระบบเช็กชื่อ นศท.')}</p><form id="login-form"><label class="field">อีเมล<input name="email" type="email" required autocomplete="username"></label><label class="field">รหัสผ่าน<input name="password" type="password" required autocomplete="current-password"></label><div id="login-error" class="error"></div><button class="btn primary" type="submit">เข้าสู่ระบบ ${icon('arrow')}</button></form><div class="note" style="margin-top:23px">ใช้บัญชีที่ผู้ดูแลระบบสร้างให้</div></section></div>`;
   }
   async function reload(){
     let data=await API.load(state.yearId);
@@ -130,7 +196,7 @@
       state.yearId=[...data.years].sort((a,b)=>b.label-a.label)[0]?.id||'';
       if(state.yearId)data=await API.load(state.yearId);
     }
-    state.data=data;localStorage.setItem('cadet-year',state.yearId);state.draft={};render();
+    state.data=data;if(weeklyTerms().length&&!weeklyTerms().includes(state.weeklyTerm))state.weeklyTerm=weeklyTerms().at(-1);localStorage.setItem('cadet-year',state.yearId);state.draft={};state.weeklyEdit=null;render();
   }
   function openModal(title,body,form,submit='บันทึก'){
     $('#modal-body').innerHTML=`<div class="modal-title"><h2>${title}</h2><button class="icon-btn" data-action="close-modal" aria-label="ปิด">${icon('close')}</button></div>${form?`<form data-form="${form}">${body}<div id="form-error" class="error"></div><div class="modal-actions">${btn('ยกเลิก','close-modal')}<button class="btn primary" type="submit">${submit}</button></div></form>`:body}`;
@@ -156,8 +222,8 @@
     const rr=reportRows(),ss=[...sessions()].sort((a,b)=>a.training_date.localeCompare(b.training_date)||a.slot.localeCompare(b.slot));
     const summary=[['ปีการศึกษา','รหัสนักเรียน','ชื่อ–นามสกุล','ชั้นปี','ห้อง','มา','ขาด','ยังไม่บันทึก','ชั่วโมงมาเข้าฝึก','อัตราเข้าฝึก (%)','ผลการฝึก'],...rr.map(r=>[year()?.label,r.e.student.student_code,C.fullName(r.e.student),r.e.training_year,r.e.room,r.present,r.absent,r.pending,r.hours,r.rate===null?'ยังไม่มีรายการที่บันทึก':r.rate,results[r.e.result]])];
     const detail=[['ปีการศึกษา','รหัสนักเรียน','ชื่อ–นามสกุล','ชั้นปี','วันที่ฝึก','ช่วงเวลา','หัวข้อ','ชั่วโมง','สถานะ','ผู้บันทึก','เวลาบันทึก (ประเทศไทย)']];
-    for(const r of rr) for(const s of ss.filter(s=>s.training_year===r.e.training_year&&s.training_date>=r.e.joined_on)){const a=state.data.attendance.find(a=>a.session_id===s.id&&a.enrollment_id===r.e.id);detail.push([year()?.label,r.e.student.student_code,C.fullName(r.e.student),r.e.training_year,s.training_date,s.slot,s.title,Number(s.duration_hours),C.STATUSES[a?.status||'pending'],state.data.profiles.find(p=>p.id===a?.recorded_by)?.display_name||a?.recorded_by||'',a?date(a.recorded_at,{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'']);}
-    workbook([['สรุปรายบุคคล',summary],['รายรอบฝึก',detail],['วิธีอ่านรายงาน',[['หัวข้อ','คำอธิบาย'],['ตัวกรอง',`ปี ${year()?.label||'—'} / ${state.level?'ชั้นปี '+state.level:'ทุกชั้นปี'} / คำค้น ${state.search||'ทั้งหมด'}`],['อัตราเข้าฝึก','มา ÷ (มา + ขาด) × 100 ใช้เฉพาะรายการที่บันทึกแล้ว'],['ยังไม่บันทึก','ไม่นับเป็นขาด และไม่รวมในตัวหารอัตราเข้าฝึก'],['ชั่วโมงสะสม','รวมเฉพาะรอบที่มีสถานะ มา'],['วันที่ส่งออก',date(new Date().toISOString(),{hour:'2-digit',minute:'2-digit'})]]]],`Cadet_Report_${year()?.label||'all'}_${C.bangkokDate()}.xlsx`);
+    for(const r of rr) for(const s of ss.filter(s=>s.training_year===r.e.training_year&&s.training_date>=r.e.joined_on)){const a=state.data.attendance.find(a=>a.session_id===s.id&&a.enrollment_id===r.e.id);detail.push([year()?.label,r.e.student.student_code,C.fullName(r.e.student),r.e.training_year,s.training_date,s.slot,s.title,s.duration_minutes!=null?Math.round(s.duration_minutes/60*100)/100:Number(s.duration_hours),C.STATUSES[a?.status||'pending'],state.data.profiles.find(p=>p.id===a?.recorded_by)?.display_name||a?.recorded_by||'',a?date(a.recorded_at,{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'']);}
+    workbook([...weeklyReportSheets(),['สรุปรายบุคคล',summary],['รายรอบฝึก',detail],['วิธีอ่านรายงาน',[['หัวข้อ','คำอธิบาย'],['ตัวกรอง',`ปี ${year()?.label||'—'} / ${state.level?'ชั้นปี '+state.level:'ทุกชั้นปี'} / คำค้น ${state.search||'ทั้งหมด'}`],['อัตราเข้าฝึก','มา ÷ (มา + ขาด) × 100 ใช้เฉพาะรายการที่บันทึกแล้ว'],['ยังไม่บันทึก','ไม่นับเป็นขาด และไม่รวมในตัวหารอัตราเข้าฝึก'],['ชั่วโมงสะสม','รวมเฉพาะรอบที่มีสถานะ มา'],['วันที่ส่งออก',date(new Date().toISOString(),{hour:'2-digit',minute:'2-digit'})]]]],`Cadet_Report_${year()?.label||'all'}_${C.bangkokDate()}.xlsx`);
     toast('ดาวน์โหลดรายงานแล้ว');
   }
   async function parseImport(file){
@@ -169,14 +235,15 @@
     const rows=XLSX.utils.sheet_to_json(ws,{raw:false,defval:''});if(!rows.length||rows.length>2000)throw new Error('ไฟล์ต้องมี 1–2,000 รายชื่อ');
     state.importRows=C.validateImport(rows,enrollmentList().map(e=>e.student));render();
   }
-  async function navigate(page){if(!mayLeave())return;state.page=page;state.search='';state.draft={};state.mobile=false;if(page==='attendance'&&!state.level)state.level=1;render();window.scrollTo(0,0);}
-  async function changeYear(y){if(!mayLeave()){render();return;}state.yearId=y;state.sessionId='';state.search='';state.importRows=[];state.importDate='';await reload();}
+  async function navigate(page){if(!mayLeave())return;state.page=page;state.search='';state.draft={};state.weeklyEdit=null;state.mobile=false;if(page==='attendance'&&!state.level&&!weekGroups().length)state.level=1;render();window.scrollTo(0,0);}
+  async function changeYear(y){if(!mayLeave()){render();return;}state.yearId=y;state.sessionId='';state.weeklyNumber=0;state.search='';state.importRows=[];state.importDate='';await reload();}
   async function act(action,el){
+    if(action.startsWith('weekly-')||['save-weekly','setup-weekly'].includes(action))return weeklyAction(action,el);
     if(action.startsWith('goto-'))return navigate(action.slice(5));
     switch(action){
       case 'navigate':return navigate(el.dataset.page);
       case 'menu':if(innerWidth<=700)state.mobile=!state.mobile;else{state.collapsed=!state.collapsed;localStorage.setItem('cadet-sidebar',state.collapsed?'collapsed':'expanded');}render();break;
-      case 'level':if(!mayLeave())return;state.level=Number(el.dataset.value);state.draft={};state.search='';render();break;
+      case 'level':if(!mayLeave())return;state.level=Number(el.dataset.value);state.draft={};state.weeklyEdit=null;state.search='';render();break;
       case 'close-modal':$('#modal').close();break;
       case 'refresh':if(mayLeave()){await reload();toast('โหลดข้อมูลล่าสุดแล้ว');}break;
       case 'new-session':if(mayLeave())newSession();break;
@@ -184,10 +251,10 @@
       case 'status':{const original=state.data.attendance.find(a=>a.session_id===state.sessionId&&a.enrollment_id===el.dataset.id)?.status||'pending';if(el.dataset.status===original)delete state.draft[el.dataset.id];else state.draft[el.dataset.id]=el.dataset.status;refreshAttendance();break;}
       case 'mark-present':{const visible=roster().filter(e=>!state.search||[C.fullName(e.student),e.student.student_code,e.room].join(' ').toLowerCase().includes(state.search.toLowerCase()));if(!confirm(`ระบุ “มา” ให้ทั้ง ${visible.length} รายชื่อที่แสดงหรือไม่?`))return;for(const e of visible){const original=state.data.attendance.find(a=>a.session_id===state.sessionId&&a.enrollment_id===e.id)?.status||'pending';if(original==='present')delete state.draft[e.id];else state.draft[e.id]='present';}refreshAttendance();break;}
       case 'save-attendance':{const s=selectedSession();const records=Object.entries(state.draft).map(([enrollment_id,status])=>({enrollment_id,status}));if(!records.length)return;await API.saveAttendance(s.id,s.revision,records);await reload();toast('บันทึกการเช็กชื่อ '+records.length+' รายการแล้ว');break;}
-      case 'open-session':if(!mayLeave())return;state.sessionId=el.dataset.id;state.level=state.data.sessions.find(s=>s.id===state.sessionId).training_year;state.draft={};state.page='attendance';state.search='';render();break;
+      case 'open-session':if(!mayLeave())return;state.sessionId=el.dataset.id;{const target=state.data.sessions.find(s=>s.id===state.sessionId);state.level=target.term_number?0:target.training_year;if(target.term_number){state.weeklyTerm=Number(target.term_number);state.weeklyNumber=Number(target.week_number);}}state.draft={};state.weeklyEdit=null;state.page='attendance';state.search='';render();break;
       case 'student-detail':studentDetail(el.dataset.id);break;
       case 'template':template();break;
-      case 'confirm-import':{if(!state.importRows.length||state.importRows.some(r=>r.errors.length))return;const d=$('#import-date').value;if(!d)throw new Error('กรุณาระบุวันเริ่มนับรอบฝึก');const count=await API.importStudents(state.yearId,state.importRows.map(r=>r.value),d);state.importRows=[];await reload();toast('นำเข้าสำเร็จ '+count+' รายชื่อ');break;}
+      case 'confirm-import':{if(!state.yearId)throw new Error('กรุณาสร้างหรือเลือกปีการศึกษาก่อนนำเข้ารายชื่อ');if(!state.importRows.length||state.importRows.some(r=>r.errors.length))return;const d=$('#import-date').value;if(!d)throw new Error('กรุณาระบุวันเริ่มนับรอบฝึก');const count=await API.importStudents(state.yearId,state.importRows.map(r=>r.value),d);state.importRows=[];await reload();toast('นำเข้าสำเร็จ '+count+' รายชื่อ');break;}
       case 'export-report':exportReport();break;
       case 'print':window.print();break;
       case 'new-year':openModal('เพิ่มปีการศึกษา',`<div class="form-grid">${field('ปีการศึกษา (พ.ศ.)','label','number',String((year()?.label||new Date().getFullYear()+543)+1),'required min="2500" max="2800"')}${field('วันเริ่มนับการฝึก','starts_on','date',C.bangkokDate(),'required')}</div><p class="modal-subtitle" style="margin-top:18px">การเพิ่มปีนี้เริ่มจากทะเบียนว่าง หากต้องการย้ายรายชื่อเดิม ให้ใช้เมนูเลื่อนชั้นทั้งปี</p>`,'year','สร้างปีการศึกษา');break;
@@ -201,11 +268,11 @@
       case 'logout':if(!mayLeave())return;if(API.demo){toast('โหมดทดลองไม่ใช้บัญชีจริง');return;}await API.logout();state.user=null;render();break;
     }
   }
-  function refreshAttendance(){const table=$('#attendance-table');if(table)table.innerHTML=attendanceTable();const dc=$('#draft-count');if(dc)dc.innerHTML=draftSummary();const save=$('[data-action="save-attendance"]');if(save)save.disabled=!changed();}
+  function refreshAttendance(){if(weekGroups().length){refreshWeekly();return;}const table=$('#attendance-table');if(table)table.innerHTML=attendanceTable();const dc=$('#draft-count');if(dc)dc.innerHTML=draftSummary();const save=$('[data-action="save-attendance"]');if(save)save.disabled=!changed();}
   async function submitModal(form){
     const v=Object.fromEntries(new FormData(form)),kind=form.dataset.form;
     switch(kind){
-      case 'session':state.sessionId=await API.createSession({year_id:state.yearId,training_year:Number(v.training_year),training_date:v.training_date,slot:v.slot,title:v.title,duration_hours:Number(v.duration_hours)});state.level=Number(v.training_year);state.page='attendance';state.draft={};break;
+      case 'session':state.sessionId=await API.createSession({year_id:state.yearId,training_year:Number(v.training_year),training_date:v.training_date,slot:v.slot,title:v.title,duration_hours:Number(v.duration_hours)});state.level=Number(v.training_year);state.page='attendance';state.draft={};state.weeklyEdit=null;break;
       case 'student':{const values=C.validateImport([{...Object.fromEntries(C.HEADERS.map((h,i)=>[h,[v.student_code,v.prefix,v.first_name,v.last_name,v.room,v.training_year][i]]))}],enrollmentList().map(e=>e.student));if(values[0].errors.length)throw new Error(values[0].errors.join(' · '));await API.importStudents(state.yearId,[values[0].value],v.joined_on);break;}
       case 'enrollment':await API.updateEnrollment(v.id,v.room,v.result);break;
       case 'year':state.yearId=await API.createYear(Number(v.label),v.starts_on);state.sessionId='';break;
@@ -216,7 +283,7 @@
   }
   document.addEventListener('click',async ev=>{
     const el=ev.target.closest('[data-action]');if(!el||el.disabled||state.busy)return;
-    const action=el.dataset.action;const asyncAction=['save-attendance','confirm-import','refresh','backup','logout','select-year'].includes(action);
+    const action=el.dataset.action;const asyncAction=['save-attendance','confirm-import','refresh','backup','logout','select-year','save-weekly','setup-weekly'].includes(action);
     try{if(asyncAction){state.busy=true;el.classList.add('busy');el.disabled=true;}await act(action,el);}
     catch(error){toast(error.message||'ทำรายการไม่สำเร็จ');}
     finally{state.busy=false;el.classList.remove('busy');if(document.contains(el))el.disabled=action==='save-attendance'?!changed():false;}
@@ -232,6 +299,7 @@
     try{await submitModal(f);}catch(err){$('#form-error').textContent=err.message||'บันทึกไม่สำเร็จ';}finally{b.disabled=false;state.busy=false;}
   });
   document.addEventListener('input',ev=>{
+    if(ev.target.id==='weekly-note'){state.weeklyEdit={...weeklyMeta(),note:ev.target.value};refreshWeekly();return;}
     if(ev.target.id!=='search')return;state.search=ev.target.value;
     if(state.page==='attendance')refreshAttendance();
     if(state.page==='students')$('#students-table').innerHTML=studentsTable();
@@ -239,8 +307,10 @@
   });
   document.addEventListener('change',async ev=>{
     try{
+      if(ev.target.id==='weekly-activity'){state.weeklyEdit={...weeklyMeta(),kind:ev.target.checked?'activity':'training'};render();}
+      if(ev.target.id==='weekly-term-select'){if(!mayLeave()){ev.target.value=state.weeklyTerm;return;}state.weeklyTerm=Number(ev.target.value);state.weeklyNumber=0;state.draft={};state.weeklyEdit=null;render();}
       if(ev.target.id==='year-select')await changeYear(ev.target.value);
-      if(ev.target.id==='session-select'){if(!mayLeave()){ev.target.value=state.sessionId;return;}state.sessionId=ev.target.value;state.draft={};render();}
+      if(ev.target.id==='session-select'){if(!mayLeave()){ev.target.value=state.sessionId;return;}state.sessionId=ev.target.value;state.draft={};state.weeklyEdit=null;render();}
       if(ev.target.id==='import-date')state.importDate=ev.target.value;
       if(ev.target.id==='import-file'){const file=ev.target.files[0];state.importRows=[];try{await parseImport(file);}catch(err){render();throw err;}}
     }catch(err){const e=$('#import-error');if(e)e.textContent=err.message;else toast(err.message);}
@@ -249,3 +319,4 @@
   async function init(){try{state.user=await API.session();if(state.user?.enabled)await reload();else render();}catch(err){$('#app').innerHTML=`<div class="login"><section class="card login-box"><h2>เชื่อมต่อระบบไม่ได้</h2><div class="error">${esc(err.message)}</div><p class="guide" style="margin-top:16px">ตรวจสอบการเชื่อมต่อและการตั้งค่า Supabase แล้วลองโหลดหน้าใหม่</p>${btn('ลองอีกครั้ง','refresh','','refresh')}</section></div>`;}}
   init();
 })();
+
